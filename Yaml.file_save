@@ -1,0 +1,53 @@
+import yaml  # 파이썬 표준 PyYAML 라이브러리 필요 (설치: pip install pyyaml)
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
+class ParameterControlWidget(QWidget):
+    def __init__(self, node):
+        super().__init__()
+        self.node = node
+
+        layout = QVBoxLayout()
+        form = QFormLayout()
+
+        # 파라미터 위젯
+        self.euclid_check = QCheckBox()
+        form.addRow("유클리드 거리 사용", self.euclid_check)
+        self.angle_tol_edit = QLineEdit("0.5")
+        form.addRow("Angle Tol.", self.angle_tol_edit)
+        self.dist_tol_edit = QLineEdit("0.05")
+        form.addRow("Dist Tol.", self.dist_tol_edit)
+        self.angular_p_edit = QLineEdit("0.5")
+        form.addRow("Angular P", self.angular_p_edit)
+        self.linear_p_edit = QLineEdit("1.0")
+        form.addRow("Linear P", self.linear_p_edit)
+
+        layout.addLayout(form)
+
+        # 저장 버튼
+        save_btn = QPushButton("YAML에 설정 저장")
+        save_btn.clicked.connect(self.save_params)
+        layout.addWidget(save_btn)
+
+        self.setLayout(layout)
+
+    def save_params(self):
+        # 1. 입력값을 딕셔너리로 모으기
+        params_dict = {
+            "use_euclid_distance": self.euclid_check.isChecked(),
+            "angle_tol": float(self.angle_tol_edit.text()),
+            "dist_tol": float(self.dist_tol_edit.text()),
+            "angular_p": float(self.angular_p_edit.text()),
+            "linear_p": float(self.linear_p_edit.text()),
+            # ... 추가 파라미터도 여기에 넣기
+        }
+        # 2. 파일 저장 다이얼로그 띄우기 (기본값: params.yaml)
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "YAML로 저장", "params.yaml", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if filename:
+            try:
+                with open(filename, "w") as f:
+                    yaml.dump(params_dict, f, allow_unicode=True)
+                QMessageBox.information(self, "성공", f"파라미터가 {filename} 파일로 저장됨!")
+            except Exception as e:
+                QMessageBox.warning(self, "오류", f"저장 실패: {e}")
