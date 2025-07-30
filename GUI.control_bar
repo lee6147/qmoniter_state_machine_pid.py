@@ -1,0 +1,134 @@
+# 필요한 라이브러리 불러오기
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QFormLayout, QLineEdit, QCheckBox, QPushButton, QLabel, QGroupBox
+)
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+
+import rclpy
+from rclpy.node import Node
+from turtlesim.msg import Pose
+import threading
+import sys
+import math
+
+# 1. 파라미터 제어 위젯 만들기 (오른쪽에 붙일 파트)
+class ParameterControlWidget(QWidget):
+    def __init__(self, node):
+        super().__init__()
+        self.node = node  # ROS 노드 객체 받아옴
+
+        # 전체 위젯 레이아웃 설정
+        layout = QVBoxLayout()
+
+        # 파라미터 입력폼(레이블+입력칸)이 한 줄씩 나오는 폼 레이아웃
+        form = QFormLayout()
+        # 예시: 체크박스, 각종 파라미터 입력칸 만들기
+        self.euclid_check = QCheckBox()
+        form.addRow("유클리드 거리 사용", self.euclid_check)
+        # 파라미터 여러 개 추가! (초기값은 맘대로)
+        self.angle_tol_edit = QLineEdit("0.5")
+        form.addRow("Angle Tol.", self.angle_tol_edit)
+        self.dist_tol_edit = QLineEdit("0.05")
+        form.addRow("Dist Tol.", self.dist_tol_edit)
+        self.angular_p_edit = QLineEdit("0.5")
+        form.addRow("Angular P", self.angular_p_edit)
+        self.linear_p_edit = QLineEdit("1.0")
+        form.addRow("Linear P", self.linear_p_edit)
+        # 필요한 만큼 QLineEdit을 쭉 추가! (실제 값과 이름은 프로젝트에 맞게 수정)
+
+        layout.addLayout(form)  # 폼을 메인 레이아웃에 추가
+
+        # 저장 버튼도 추가
+        save_btn = QPushButton("YAML에 설정 저장")
+        save_btn.clicked.connect(self.save_params)  # 버튼 누르면 아래 함수 실행
+        layout.addWidget(save_btn)
+
+        self.setLayout(layout)  # 최종 레이아웃 적용
+
+    def save_params(self):
+        # 입력값을 읽어서 ROS 파라미터로 전달
+        # (여기선 실제 파라미터 이름/타입에 맞게 조정 필요)
+        params = [
+            rclpy.parameter.Parameter('angle_tol', rclpy.Parameter.Type.DOUBLE, float(self.angle_tol_edit.text())),
+            rclpy.parameter.Parameter('dist_tol', rclpy.Parameter.Type.DOUBLE, float(self.dist_tol_edit.text())),
+            rclpy.parameter.Parameter('angular_p', rclpy.Parameter.Type.DOUBLE, float(self.angular_p_edit.text())),
+            rclpy.parameter.Parameter('linear_p', rclpy.Parameter.Type.DOUBLE, float(self.linear_p_edit.text())),
+            # ... 여기에 나머지 파라미터도 추가
+        ]
+        self.node.set_parameters(params)  # 노드에 파라미터 적용
+
+# 2. 메인 GUI 창(MainWindow) 클래스
+class MainWindow(QMainWindow):
+    def __init__(self, node):
+        super().__init__()
+        self.node = node
+
+        self.setWindowTitle("터틀봇 GUI (파라미터 제어 포함!)")
+
+        # === 메인 화면을 좌우로 나누는 HBoxLayout 생성 ===
+        main_widget = QWidget()
+        main_layout = QHBoxLayout()
+
+        # === 왼쪽: 터틀 맵 ===
+        # FigureCanvas로 matplotlib 그래프를 PyQt에 띄움
+        self.figure_map = Figure(figsize=(6, 6))  # <- 맵 크기(정사각형) 조정! 
+        self.canvas = FigureCanvas(self.figure_map)
+        self.ax = self.figure_map.add_subplot(111)
+
+        main_layout.addWidget(self.canvas, stretch=2)  # stretch=2로 오른쪽보다 살짝 더 큼
+
+        # === 오른쪽: 파라미터 제어 패널 추가 ===
+        self.param_widget = ParameterControlWidget(self.node)  # 아까 만든 위젯 클래스 사용
+        main_layout.addWidget(self.param_widget, stretch=1)    # stretch=1로 오른쪽 패널은 더 좁게
+
+        # 메인 레이아웃을 메인 위젯에 적용
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+
+        # === QTimer로 맵 업데이트 반복 ===
+        from PyQt5.QtCore import QTimer
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_map)  # 0.1초마다 update_map 함수 실행
+        self.timer.start(100)
+
+    def update_map(self):
+        # 이 함수는 터틀 위치/목표/등을 매번 새로 그림
+        self.ax.clear()
+        self.ax.set_xlim(0, 11)
+        self.ax.set_ylim(0, 11)
+        self.ax.set_aspect('equal')
+        self.ax.grid(True)
+        self.ax.set_title("터틀 맵")
+        # 실제로 터틀의 위치, 목표, Trajectory 등은 여기에 추가로 그림!
+        # 예시:
+        if self.node.turtle_pose is not None:
+            x = self.node.turtle_pose.x
+            y = self.node.turtle_pose.y
+            self.ax.plot(x, y, 'bo', label='Robot')
+        if self.node.goal_pose is not None:
+            gx = self.node.goal_pose.x
+            gy = self.node.goal_pose.y
+            self.ax.plot(gx, gy, 'r*', markersize=15, label='Target')
+        self.ax.legend()
+        self.canvas.draw()
+
+# 3. main() 함수
+def main(args=None):
+    rclpy.init(args=args)
+    node = TurtleMonitor()  # 이건 기존에 정의한 ROS2 노드 클래스
+
+    # ROS는 별도 스레드에서 돌림
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
+
+    # PyQt 앱 실행
+    app = QApplication(sys.argv)
+    window = MainWindow(node)
+    window.show()
+    ret = app.exec_()
+
+    node.destroy_node()
+    rclpy.shutdown()
+    sys.exit(ret)
